@@ -382,6 +382,3 @@
         flex-direction: column;
     }
 }
-
-/* Global modal layer is intentionally above the fullscreen profile page.
-   The confirmation dialog itself is above all other modals. */

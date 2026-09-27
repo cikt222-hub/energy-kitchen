@@ -144,8 +144,10 @@ async function callAI(prompt) {
         return '❌ Gemini не настроен. Откройте js/app.js и вставьте API-ключ в CONFIG.GEMINI_API_KEY.';
     }
 
-    // Используем только модели, которые сейчас реально доступны через Gemini API
-    // и имеют Free Tier. Порядок: сначала дешёвая/быстрая, затем более мощная.
+    // ВАЖНО: ключи AQ. — это новый тип authorization key. Google переводит
+    // AI Studio на них с 28.05.2026, но сейчас встречаются случаи, когда
+    // Generative Language API возвращает 401 ACCESS_TOKEN_TYPE_UNSUPPORTED.
+    // Это проблема авторизации ключа/проекта, а не выбора модели.
     const models = Array.isArray(CONFIG.MODELS) && CONFIG.MODELS.length
         ? CONFIG.MODELS
         : ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite'];
@@ -174,10 +176,7 @@ async function callAI(prompt) {
                         body: JSON.stringify({
                             systemInstruction: { parts: [{ text: systemText }] },
                             contents: [{ role: 'user', parts: [{ text: String(prompt) }] }],
-                            generationConfig: {
-                                temperature: 0.7,
-                                maxOutputTokens: 1200
-                            }
+                            generationConfig: { temperature: 0.7, maxOutputTokens: 1200 }
                         })
                     }
                 );
@@ -185,27 +184,43 @@ async function callAI(prompt) {
                 let data = null;
                 try { data = await response.json(); } catch (_) {}
                 const apiMessage = data?.error?.message || `HTTP ${response.status}`;
+                const apiReason = data?.error?.details?.find(d => d?.reason)?.reason || '';
 
                 if (response.ok) {
                     const parts = data?.candidates?.[0]?.content?.parts || [];
                     const content = parts.map(part => part?.text || '').join('').trim();
                     if (content) return content;
-
                     diagnostics.push(`${model}: пустой ответ (${data?.candidates?.[0]?.finishReason || 'UNKNOWN'})`);
                     break;
                 }
 
-                diagnostics.push(`${model}: HTTP ${response.status} — ${apiMessage}`);
                 console.error(`Gemini API error (${model}):`, response.status, data);
 
-                // Ошибка ключа/доступа относится ко всему проекту — нет смысла
-                // гонять четыре модели с тем же ключом.
-                if (response.status === 400 || response.status === 401 || response.status === 403) {
-                    return `❌ Gemini не смог выполнить запрос.\n\nМодель: ${model}\nHTTP: ${response.status}\nПричина: ${apiMessage}`;
+                // Авторизация относится ко всему ключу, поэтому смена модели здесь не поможет.
+                if (response.status === 401) {
+                    const isAQAuthIssue = apiReason === 'ACCESS_TOKEN_TYPE_UNSUPPORTED' ||
+                        /Expected OAuth 2 access token|invalid authentication credentials/i.test(apiMessage);
+                    if (isAQAuthIssue && apiKey.startsWith('AQ.')) {
+                        return '❌ Gemini не принимает этот AQ.-ключ.\n\n' +
+                            'Google сейчас переводит AI Studio на новый тип ключей, и для части новых AQ.-ключей ' +
+                            'Generative Language API возвращает ACCESS_TOKEN_TYPE_UNSUPPORTED.\n\n' +
+                            'Это не ошибка GitHub, модели или сайта. Создайте/выберите рабочий Gemini API key в Google AI Studio ' +
+                            'и вставьте его в CONFIG.GEMINI_API_KEY.\n\n' +
+                            `HTTP: 401\nПричина: ${apiMessage}`;
+                    }
+                    return `❌ Gemini: ключ не принят.\n\nHTTP: 401\nПричина: ${apiMessage}`;
                 }
 
-                // 404 = модель недоступна для этого API-проекта — сразу следующая.
-                // 429/500/503 = временная проблема — одна повторная попытка.
+                if (response.status === 403) {
+                    return `❌ Gemini: доступ запрещён для этого ключа/проекта.\n\nHTTP: 403\nПричина: ${apiMessage}`;
+                }
+
+                diagnostics.push(`${model}: HTTP ${response.status} — ${apiMessage}`);
+
+                // Модель не найдена/недоступна — сразу следующая.
+                if (response.status === 404) break;
+
+                // Квота/временная ошибка — одна повторная попытка, затем следующая модель.
                 if ([429, 500, 503].includes(response.status)) {
                     if (attempt === 0) {
                         await sleep(response.status === 429 ? 1800 : 1200);
@@ -227,7 +242,32 @@ async function callAI(prompt) {
 
     return '❌ Gemini сейчас не отвечает.\n\nПроверены модели:\n' +
         diagnostics.map(x => '• ' + x).join('\n') +
-        '\n\nЕсли здесь есть HTTP 429 — достигнута бесплатная квота. Если 403/400 — проблема с ключом или настройками проекта.';
+        '\n\n429 — временная/квотная проблема; 404 — модель недоступна; 500/503 — временная ошибка сервиса.';
+}
+
+async function testGeminiConnection() {
+    const apiKey = String(CONFIG.GEMINI_API_KEY || '').trim();
+    if (!apiKey || apiKey === 'ВСТАВЬ_СЮДА_СВОЙ_GEMINI_API_KEY') {
+        return { ok: false, message: 'Ключ не указан в CONFIG.GEMINI_API_KEY.' };
+    }
+
+    const model = CONFIG.MODELS?.[0] || 'gemini-3.5-flash-lite';
+    try {
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+                body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Ответь одним словом: OK' }] }] })
+            }
+        );
+        const data = await response.json().catch(() => ({}));
+        if (response.ok) return { ok: true, message: `Gemini подключён (${model}).` };
+        const reason = data?.error?.details?.find(d => d?.reason)?.reason || '';
+        return { ok: false, status: response.status, reason, message: data?.error?.message || 'Неизвестная ошибка API.' };
+    } catch (e) {
+        return { ok: false, message: e?.message || 'Ошибка сети.' };
+    }
 }
 
 function clearAIKey() {
@@ -1505,8 +1545,16 @@ function initEventListeners() {
     document.getElementById('closeModalBtn').addEventListener('click', () => document.getElementById('settingsModal').classList.remove('show'));
     document.getElementById('cancelSettingsBtn').addEventListener('click', () => document.getElementById('settingsModal').classList.remove('show'));
     document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
-    document.getElementById('aiSettingsBtn')?.addEventListener('click', () => {
-        showToast('Чтобы настроить Gemini: откройте js/app.js и вставьте ключ в CONFIG.GEMINI_API_KEY.', 'info');
+    document.getElementById('aiSettingsBtn')?.addEventListener('click', async () => {
+        showToast('Проверяю подключение Gemini…', 'info');
+        const result = await testGeminiConnection();
+        if (result.ok) {
+            showToast('✅ Gemini подключён и отвечает.', 'success');
+        } else if (result.status === 401 && result.reason === 'ACCESS_TOKEN_TYPE_UNSUPPORTED') {
+            showToast('❌ Этот AQ.-ключ сейчас не принимается Gemini API. Нужен рабочий ключ/проект.', 'error');
+        } else {
+            showToast(`❌ Gemini: HTTP ${result.status || '—'} — ${result.message}`, 'error');
+        }
     });
 
     document.getElementById('confirmCancelBtn').addEventListener('click', hideConfirmModal);
