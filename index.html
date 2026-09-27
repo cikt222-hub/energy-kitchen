@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🍽️ ЭнергоКухня — ИИ разумного потребления</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.3/dist/dexie.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/profile.css">
+</head>
+<body>
+
+<header>
+    <div class="header-left">
+        <button class="profile-btn" id="profileBtn">
+            <i class="fas fa-user-circle"></i>
+        </button>
+        <h1><i class="fas fa-leaf"></i> ЭнергоКухня</h1>
+    </div>
+    <div class="header-actions">
+        <button class="btn-icon" id="favoritesBtn">
+            <i class="fas fa-star"></i> Избранное
+        </button>
+        <button class="btn-icon" id="recommendationsBtn">
+            <i class="fas fa-lightbulb"></i> Рекомендации
+            <span class="recommendation-badge hidden" id="recommendationBadge">!</span>
+        </button>
+        <button class="btn-icon" id="settingsBtn"><i class="fas fa-sliders-h"></i> Настройки кухни</button>
+        <button class="btn-icon" id="fridgeToggleBtn"><i class="fas fa-box-open"></i> Хранилище</button>
+        <button class="theme-toggle" id="themeToggle" title="Переключить тему">
+            <i class="fas fa-moon"></i>
+        </button>
+    </div>
+</header>
+
+<div class="app-container">
+    <div class="sidebar">
+        <button class="new-chat-btn" id="newChatBtn">
+            <i class="fas fa-plus-circle"></i> Новый чат
+        </button>
+        <ul class="chat-list" id="chatList"></ul>
+        <div class="sidebar-footer">
+            <i class="fas fa-database"></i> Данные локально
+        </div>
+    </div>
+
+    <div class="chat-area">
+        <div class="chat-header">
+            <div class="chat-header-title" id="currentChatTitle">Новый чат</div>
+            <button class="btn-icon-small" id="renameChatBtn" title="Переименовать чат">
+                <i class="fas fa-pencil-alt"></i>
+            </button>
+        </div>
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="chat-input-container">
+            <div class="input-wrapper">
+                <div class="meal-select-wrapper" id="mealSelectWrapper">
+                    <select id="mealTypeSelect" class="meal-select">
+                        <option value="завтрак">🍳 Завтрак</option>
+                        <option value="обед">🍲 Обед</option>
+                        <option value="ужин">🍝 Ужин</option>
+                        <option value="полдник">☕ Полдник</option>
+                    </select>
+                    <i class="fas fa-chevron-down select-arrow"></i>
+                </div>
+                <input type="text" id="messageInput" placeholder="Спросите, что приготовить..." />
+            </div>
+            <div class="cooking-mode-selector" id="cookingModeSelector">
+                <select id="cookingModeSelect" class="mode-select">
+                    <option value="normal">🔥 Нормальный</option>
+                    <option value="eco">💚 Эконом</option>
+                    <option value="unlimited">⚡ Неограниченный</option>
+                </select>
+            </div>
+            <button id="sendBtn"><i class="fas fa-paper-plane"></i></button>
+        </div>
+    </div>
+</div>
+
+<!-- Хранилище -->
+<div class="modal fridge-modal" id="fridgeModal">
+    <div class="modal-content modal-extra-large">
+        <div class="modal-header">
+            <h3><i class="fas fa-box-open"></i> Хранилище продуктов</h3>
+            <button class="modal-close" id="closeFridgeModalBtn">&times;</button>
+        </div>
+        <div class="modal-body fridge-split">
+            <div class="fridge-left">
+                <div class="fridge-params">
+                    <div class="param-item">
+                        <span><i class="fas fa-thermometer-half"></i> Холодильник</span>
+                        <select id="fridgeTemp" class="param-select">
+                            <option value="4">+4°C</option><option value="2">+2°C</option><option value="6">+6°C</option>
+                        </select>
+                    </div>
+                    <div class="param-item">
+                        <span><i class="fas fa-snowflake"></i> Морозилка</span>
+                        <select id="freezerTemp" class="param-select">
+                            <option value="-18">-18°C</option><option value="-24">-24°C</option><option value="-12">-12°C</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="fridge-tabs sticky">
+                    <button class="tab-btn active" data-tab="fridge">❄️ Холодильник</button>
+                    <button class="tab-btn" data-tab="freezer">🧊 Морозилка</button>
+                    <button class="tab-btn" data-tab="cupboard">📦 Шкафчик</button>
+                </div>
+                <div class="fridge-container" id="fridgeContainer">
+                    <div class="fridge-header">
+                        <span class="header-name">Продукт</span>
+                        <span class="header-weight">Вес (г)</span>
+                        <span class="header-expiry">Срок</span>
+                        <span class="header-opened">Вскр.</span>
+                        <span class="header-actions">Действия</span>
+                    </div>
+                    <ul class="fridge-list" id="fridgeList"></ul>
+                </div>
+            </div>
+            <div class="fridge-right">
+                <h4>➕ Добавить продукт</h4>
+                <div class="add-product-form">
+                    <select id="productCategory" class="product-select">
+                        <option value="milk">🥛 Молоко (7 дн)</option>
+                        <option value="yogurt">🍦 Йогурт (10 дн)</option>
+                        <option value="cheese">🧀 Сыр (14 дн)</option>
+                        <option value="meat">🥩 Мясо (3 дн)</option>
+                        <option value="fish">🐟 Рыба (2 дн)</option>
+                        <option value="vegetables">🥬 Овощи (7 дн)</option>
+                        <option value="fruits">🍎 Фрукты (5 дн)</option>
+                        <option value="eggs">🥚 Яйца (20 дн)</option>
+                        <option value="bread">🍞 Хлеб (4 дн)</option>
+                        <option value="cereals">🌾 Крупы (180 дн)</option>
+                        <option value="spices">🌿 Специи (365 дн)</option>
+                        <option value="custom">📝 Свой вариант</option>
+                    </select>
+                    <input type="text" id="customProductName" placeholder="Название продукта" style="display:none" />
+                    <input type="number" id="productWeight" placeholder="Вес (г)" min="1" required />
+                    <input type="number" id="customExpiryDays" placeholder="Срок (дней, необязательно)" min="1" max="365" style="display:none" />
+                    <div class="expiry-hint">Если не указать срок, ИИ рассчитает сам</div>
+                    <div class="storage-toggle">
+                        <label><input type="radio" name="storage" value="fridge" checked> Холодильник</label>
+                        <label><input type="radio" name="storage" value="freezer"> Морозилка</label>
+                        <label><input type="radio" name="storage" value="cupboard"> Шкафчик</label>
+                    </div>
+                    <div class="opened-toggle">
+                        <label><input type="checkbox" id="openedCheckbox"> Вскрыто</label>
+                    </div>
+                    <input type="date" id="purchaseDate" />
+                    <button id="addProductBtn" class="add-btn"><i class="fas fa-plus"></i> Добавить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Настройки кухни -->
+<div class="modal" id="settingsModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-kitchen-set"></i> Оборудование кухни</h3>
+            <button class="modal-close" id="closeModalBtn">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="settings-group">
+                <label class="setting-label">
+                    <span><i class="fas fa-fire"></i> Плита / Духовка</span>
+                    <div class="checkbox-group">
+                        <label><input type="checkbox" value="печь(газ)" class="appliance-check"> Печь(газ)</label>
+                        <label><input type="checkbox" value="печь(электро)" class="appliance-check"> Печь(электро)</label>
+                        <label><input type="checkbox" value="духовка" class="appliance-check"> Духовка</label>
+                        <label><input type="checkbox" value="индукционная плита" class="appliance-check"> Индукционная</label>
+                        <label><input type="checkbox" value="газовая плита" class="appliance-check"> Газовая</label>
+                        <label><input type="checkbox" value="электроплита" class="appliance-check"> Электроплита</label>
+                    </div>
+                </label>
+                <label class="setting-label">
+                    <span><i class="fas fa-tools"></i> Мелкая техника</span>
+                    <div class="checkbox-group">
+                        <label><input type="checkbox" value="микроволновка" class="appliance-check"> Микроволновка</label>
+                        <label><input type="checkbox" value="чайник" class="appliance-check"> Чайник</label>
+                        <label><input type="checkbox" value="миксер" class="appliance-check"> Миксер</label>
+                        <label><input type="checkbox" value="блендер" class="appliance-check"> Блендер</label>
+                        <label><input type="checkbox" value="тостер" class="appliance-check"> Тостер</label>
+                        <label><input type="checkbox" value="мультиварка" class="appliance-check"> Мультиварка</label>
+                        <label><input type="checkbox" value="вафельница" class="appliance-check"> Вафельница</label>
+                        <label><input type="checkbox" value="электрогриль" class="appliance-check"> Электрогриль</label>
+                        <label><input type="checkbox" value="пароварка" class="appliance-check"> Пароварка</label>
+                    </div>
+                </label>
+                <label class="setting-label">
+                    <span><i class="fas fa-utensils"></i> Приборы</span>
+                    <div class="checkbox-group">
+                        <label><input type="checkbox" value="весы" class="appliance-check"> Весы</label>
+                        <label><input type="checkbox" value="мерный стакан" class="appliance-check"> Мерный стакан</label>
+                        <label><input type="checkbox" value="тёрка" class="appliance-check"> Тёрка</label>
+                        <label><input type="checkbox" value="воронка" class="appliance-check"> Воронка</label>
+                        <label><input type="checkbox" value="ножницы" class="appliance-check"> Ножницы</label>
+                        <label><input type="checkbox" value="вилки, ложки" class="appliance-check"> Вилки, ложки</label>
+                        <label><input type="checkbox" value="сито" class="appliance-check"> Сито</label>
+                        <label><input type="checkbox" value="скалка" class="appliance-check"> Скалка</label>
+                    </div>
+                </label>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" id="aiSettingsBtn" type="button">🤖 Настроить ИИ</button>
+            <button class="btn btn-secondary" id="cancelSettingsBtn">Отмена</button>
+            <button class="btn btn-primary" id="saveSettingsBtn">Сохранить</button>
+        </div>
+    </div>
+</div>
+
+<!-- Подтверждение удаления -->
+<div class="modal" id="confirmModal">
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <h3 id="confirmTitle">Подтверждение</h3>
+        </div>
+        <div class="modal-body">
+            <p id="confirmMessage">Вы уверены?</p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" id="confirmCancelBtn">Отмена</button>
+            <button class="btn btn-danger" id="confirmOkBtn">Удалить</button>
+        </div>
+    </div>
+</div>
+
+<!-- Свойства продукта -->
+<div class="modal" id="productInfoModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-info-circle"></i> Свойства продукта</h3>
+            <button class="modal-close" id="closeProductInfoBtn">&times;</button>
+        </div>
+        <div class="modal-body" id="productInfoBody">
+            <div id="productBasicInfo"></div>
+            <div class="ai-analysis-section">
+                <div class="ai-header">
+                    <i class="fas fa-star" style="color: #ffa726;"></i> Анализ ИИ
+                    <span class="ai-badge">Gemini</span>
+                </div>
+                <div id="aiAnalysisContent" class="ai-analysis-content">
+                    <i class="fas fa-spinner fa-spin"></i> Анализирую продукт...
+                </div>
+            </div>
+            <button class="btn btn-secondary btn-sm" id="refreshAnalysisBtn" style="margin-top: 16px;">
+                <i class="fas fa-sync-alt"></i> Обновить анализ
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Переименование чата -->
+<div class="modal" id="renameChatModal">
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <h3>Переименовать чат</h3>
+        </div>
+        <div class="modal-body">
+            <input type="text" id="newChatTitleInput" placeholder="Новое название" maxlength="50" style="width:100%; padding:12px; border-radius:12px; border:1px solid var(--border-light); background:var(--bg-input); color:var(--text-primary);">
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" id="cancelRenameBtn">Отмена</button>
+            <button class="btn btn-primary" id="confirmRenameBtn">Сохранить</button>
+        </div>
+    </div>
+</div>
+
+<!-- Рекомендации -->
+<div class="modal" id="recommendationsModal">
+    <div class="modal-content modal-extra-large">
+        <div class="modal-header">
+            <h3><i class="fas fa-lightbulb"></i> Рекомендации ИИ</h3>
+            <button class="modal-close" id="closeRecommendationsBtn">&times;</button>
+        </div>
+        <div class="modal-body recommendations-body">
+            <div class="recommendations-panel">
+                <div class="products-list-panel">
+                    <h4>Продукты с истекающим сроком</h4>
+                    <div id="urgentProductsList" class="urgent-products-list"></div>
+                    <button class="btn btn-secondary btn-sm" id="comboRecommendationBtn" style="margin-top: 16px;">
+                        <i class="fas fa-link"></i> Найти комбинации
+                    </button>
+                </div>
+                <div class="recommendation-text-panel">
+                    <h4>Рекомендация</h4>
+                    <div id="recommendationTextDisplay" class="recommendation-text-content">
+                        Выберите продукт слева или нажмите «Найти комбинации»
+                    </div>
+                    <button class="btn btn-primary hidden" id="cookFromRecommendationBtn" style="margin-top: 16px; float: right;">
+                        <i class="fas fa-fire"></i> Приготовить это
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Профиль -->
+<div class="fullscreen-modal" id="profileModal">
+    <button class="profile-back-btn" id="closeProfileBtn">
+        <i class="fas fa-arrow-left"></i> Назад
+    </button>
+    <div class="profile-page-content">
+        <div class="profile-header-large">
+            <div class="profile-avatar" id="profileAvatar" style="background: #e6f0e3;">
+                <span style="font-size:60px;">👤</span>
+            </div>
+            <div class="profile-name-container">
+                <h2 id="profileNameDisplay">Пользователь</h2>
+                <button class="btn-icon-small" id="editProfileNameBtn"><i class="fas fa-pencil-alt"></i></button>
+            </div>
+            <input type="text" id="profileNameInput" class="profile-name-input hidden" value="Пользователь" maxlength="30">
+            <div class="profile-country-currency">
+                <button class="btn btn-secondary" id="selectCountryBtn">🇧🇾 Беларусь</button>
+                <button class="btn btn-secondary" id="selectCurrencyBtn">💵 BYN</button>
+            </div>
+        </div>
+        <div class="profile-tabs">
+            <button class="profile-tab-btn active" data-tab="about">О себе</button>
+            <button class="profile-tab-btn" data-tab="energy">Энергопотребление</button>
+            <button class="profile-tab-btn" data-tab="forecast">Прогноз</button>
+        </div>
+        <div class="profile-tab-content active" id="aboutTab">
+            <div class="questionnaire-container">
+                <!-- Аккордеон -->
+                <div class="accordion-item">
+                    <div class="accordion-header"><span>🌍 Любимые кухни</span><i class="fas fa-chevron-down"></i></div>
+                    <div class="accordion-body">
+                        <div class="checkbox-group-vertical">
+                            <label><input type="checkbox" class="cuisine-check" value="italian"> Итальянская</label>
+                            <label><input type="checkbox" class="cuisine-check" value="asian"> Азиатская</label>
+                            <label><input type="checkbox" class="cuisine-check" value="russian"> Русская</label>
+                            <label><input type="checkbox" class="cuisine-check" value="mexican"> Мексиканская</label>
+                            <label><input type="checkbox" class="cuisine-check" value="french"> Французская</label>
+                            <label><input type="checkbox" class="cuisine-check" value="mediterranean"> Средиземноморская</label>
+                        </div>
+                        <textarea id="cuisineNotes" class="question-input" rows="2" placeholder="Добавьте свои варианты..."></textarea>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <div class="accordion-header"><span>🍅 Любимые ингредиенты</span><i class="fas fa-chevron-down"></i></div>
+                    <div class="accordion-body">
+                        <input type="text" id="likedIngredients" class="question-input" placeholder="Помидоры, базилик...">
+                        <textarea id="ingredientsNotes" class="question-input" rows="2" placeholder="Заметки..."></textarea>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <div class="accordion-header"><span>👅 Базовые вкусы</span><i class="fas fa-chevron-down"></i></div>
+                    <div class="accordion-body">
+                        <div class="checkbox-group-vertical">
+                            <label><input type="checkbox" id="sweetCheck"> Сладкое</label>
+                            <label><input type="checkbox" id="saltyCheck"> Солёное</label>
+                            <label><input type="checkbox" id="bitterCheck"> Горькое</label>
+                            <label><input type="checkbox" id="sourCheck"> Кислое</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <div class="accordion-header"><span>🍔 Фастфуд / Перекусы</span><i class="fas fa-chevron-down"></i></div>
+                    <div class="accordion-body">
+                        <input type="text" id="fastFoodInput" class="question-input" placeholder="Чипсы, лапша...">
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <div class="accordion-header"><span>🚫 Нелюбимые ингредиенты</span><i class="fas fa-chevron-down"></i></div>
+                    <div class="accordion-body">
+                        <input type="text" id="dislikedIngredients" class="question-input" placeholder="Кинза, ананас...">
+                    </div>
+                </div>
+                <button class="btn btn-primary" id="saveAboutBtn">Сохранить</button>
+            </div>
+        </div>
+        <div class="profile-tab-content" id="energyTab">
+                <button class="btn btn-secondary" id="resetEnergyBtn">Сбросить статистику</button>
+                <div class="kwh-rate-box">
+                <span>1 кВт·ч = </span>
+                <span class="rate-value" id="kwhRateDisplay">0.15 BYN</span>
+                <i class="fas fa-info-circle kwh-info-icon" id="kwhInfoIcon" title="Что такое кВт·ч?"></i>
+            </div>
+            <div class="dual-charts">
+                <div class="chart-box"><canvas id="hourlyChart"></canvas></div>
+                <div class="chart-box"><canvas id="dailyChart"></canvas></div>
+            </div>
+            <div id="energyStatsSummary" class="energy-stats-summary"></div>
+            <button class="btn btn-secondary" id="showAppliancesBtn">Мои приборы</button>
+            <div class="appliance-slide-panel hidden" id="applianceSlidePanel">
+                <div class="appliance-consumption-list" id="applianceConsumptionList"></div>
+            </div>
+        </div>
+        <div class="profile-tab-content" id="forecastTab">
+            <div id="forecastContainer"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Избранное -->
+<div class="modal" id="favoritesModal">
+    <div class="modal-content modal-extra-large">
+        <div class="modal-header">
+            <h3><i class="fas fa-star"></i> Избранные рецепты</h3>
+            <button class="modal-close" id="closeFavoritesBtn">&times;</button>
+        </div>
+        <div class="modal-body favorites-body">
+            <div class="favorites-panel">
+                <div class="favorites-list-panel">
+                    <ul class="favorites-list" id="favoritesList"></ul>
+                </div>
+                <div class="favorites-recipe-panel">
+                    <div id="favoriteRecipeDisplay">Рецепт не выбран</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Подтверждение перемещения в морозилку -->
+<div class="modal" id="freezeConfirmModal">
+    <div class="modal-content modal-small">
+        <div class="modal-header"><h3>Переместить в морозилку?</h3></div>
+        <div class="modal-body"><p id="freezeProductName"></p></div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" id="cancelFreezeBtn">Отмена</button>
+            <button class="btn btn-primary" id="confirmFreezeBtn">Переместить</button>
+        </div>
+    </div>
+</div>
+
+<!-- Подтверждение удаления просроченного продукта -->
+<div class="modal" id="deleteExpiredConfirmModal">
+    <div class="modal-content modal-small">
+        <div class="modal-header"><h3>Удалить продукт?</h3></div>
+        <div class="modal-body"><p id="deleteExpiredMessage"></p></div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" id="cancelDeleteExpiredBtn">Отмена</button>
+            <button class="btn btn-danger" id="confirmDeleteExpiredBtn">Удалить</button>
+        </div>
+    </div>
+</div>
+
+<!-- Эмодзи пикер -->
+<div class="modal" id="emojiPickerModal" style="z-index: 3000;">
+    <div class="modal-content modal-small">
+        <div class="modal-header"><h3>Выберите аватар</h3><button class="modal-close" id="closeEmojiPickerBtn">&times;</button></div>
+        <div class="modal-body">
+            <div class="emoji-grid">
+                <span class="emoji-item" data-emoji="😀">😀</span><span class="emoji-item" data-emoji="😎">😎</span>
+                <span class="emoji-item" data-emoji="🤖">🤖</span><span class="emoji-item" data-emoji="🐱">🐱</span>
+                <span class="emoji-item" data-emoji="🐶">🐶</span><span class="emoji-item" data-emoji="🍎">🍎</span>
+                <span class="emoji-item" data-emoji="🚀">🚀</span><span class="emoji-item" data-emoji="💡">💡</span>
+                <span class="emoji-item" data-emoji="🎉">🎉</span><span class="emoji-item" data-emoji="🌈">🌈</span>
+                <span class="emoji-item" data-emoji="🍀">🍀</span><span class="emoji-item" data-emoji="🔥">🔥</span>
+                <span class="emoji-item" data-emoji="🌟">🌟</span><span class="emoji-item" data-emoji="🍕">🍕</span>
+                <span class="emoji-item" data-emoji="🥑">🥑</span><span class="emoji-item" data-emoji="🧁">🧁</span>
+                <span class="emoji-item" data-emoji="🍣">🍣</span><span class="emoji-item" data-emoji="🥗">🥗</span>
+                <span class="emoji-item" data-emoji="☕">☕</span><span class="emoji-item" data-emoji="🍺">🍺</span>
+                <span class="emoji-item" data-emoji="⚽">⚽</span><span class="emoji-item" data-emoji="🎸">🎸</span>
+                <span class="emoji-item" data-emoji="🌺">🌺</span><span class="emoji-item" data-emoji="💎">💎</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="toastContainer" class="toast-container"></div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
